@@ -364,12 +364,13 @@
             white-space: pre-wrap;
             word-break: break-word;
             padding-right: 8px; 
+            /* Changed scrollbar-color for consistency */
             scrollbar-width: thin;
-            scrollbar-color: rgba(148, 163, 184, 0.3) transparent; /* Gray-400 for scrollbar */
+            scrollbar-color: rgba(99, 102, 241, 0.3) transparent; /* Matching memo-details-content-area */
             border: 2px solid rgba(148, 163, 184, 0.2); /* Matching editMemoContentInput border */
             padding-left: 1rem; 
             text-align: left; 
-            /* Added styles to match editMemoContentInput */
+            /* Added styles to match input-field */
             background: rgba(255, 255, 255, 0.8); /* input-field background */
             transition: all 0.3s ease; /* input-field transition */
             backdrop-filter: blur(5px); /* input-field backdrop-filter */
@@ -382,11 +383,13 @@
             background: transparent;
         }
         .large-message-textarea::-webkit-scrollbar-thumb {
-            background: rgba(148, 163, 184, 0.3);
+            /* Changed scrollbar-thumb color for consistency */
+            background: rgba(99, 102, 241, 0.3); /* Matching memo-details-content-area */
             border-radius: 3px;
         }
         .large-message-textarea::-webkit-scrollbar-thumb:hover {
-            background: rgba(148, 163, 184, 0.5);
+            /* Changed scrollbar-thumb hover color for consistency */
+            background: rgba(99, 102, 241, 0.5); /* Matching memo-details-content-area */
         }
         .large-message-textarea:focus {
             background: rgba(255, 255, 255, 0.95);
@@ -680,6 +683,40 @@
             color: #6b7280; /* gray-600 */
         }
 
+        /* Font size controls */
+        .font-size-controls {
+            position: absolute;
+            /* Adjusted from bottom: 8px to give more spacing */
+            bottom: 16px; 
+            /* Shifted to the left by increasing 'left' from 'right' to ensure spacing from scrollbar */
+            right: 24px; 
+            display: flex;
+            gap: 4px;
+            z-index: 20; /* Ensure it's above other elements */
+        }
+
+        .font-size-button {
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(209, 213, 219, 0.5);
+            border-radius: 9999px; /* Full rounded */
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.8rem;
+            color: #4b5563;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: all 0.2s ease;
+        }
+
+        .font-size-button:hover {
+            background: rgba(255, 255, 255, 0.9);
+            transform: scale(1.1);
+        }
+
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -851,7 +888,13 @@
                     </svg>
                 </button>
             </div>
-            <textarea id="largeMessageInputTextArea" class="large-message-textarea w-full p-3 rounded-xl focus:outline-none resize-y text-base" rows="15" placeholder="Enter your detailed memo content here..."></textarea>
+            <div class="relative">
+                <textarea id="largeMessageInputTextArea" class="large-message-textarea w-full p-3 rounded-xl focus:outline-none resize-y text-base" rows="15" placeholder="Enter your detailed memo content here..."></textarea>
+                <div class="font-size-controls">
+                    <button class="font-size-button" data-target="largeMessageInputTextArea" data-action="decrease">-</button>
+                    <button class="font-size-button" data-target="largeMessageInputTextArea" data-action="increase">+</button>
+                </div>
+            </div>
             <!-- Buttons removed as per user request -->
         </div>
     </div>
@@ -1045,6 +1088,80 @@
         let selectedImportance = null; 
         let currentFilter = 'all'; 
 
+        // --- Font Size Adjustment ---
+        const initialFontSize = 16; // Base font size in px for adjustable textareas/divs like modals
+        const minFontSize = 10;
+        const maxFontSize = 30;
+        const fontSizeStep = 2; // Step for adjusting font size
+
+        function adjustFontSize(element, change) {
+            let currentSize = parseFloat(getComputedStyle(element).fontSize);
+            let newLineHeight = parseFloat(getComputedStyle(element).lineHeight); // Get current line height
+
+            // If line-height is 'normal', calculate based on current font size or a default ratio
+            if (getComputedStyle(element).lineHeight === 'normal' || newLineHeight === 0) {
+                newLineHeight = currentSize * 1.5; // Default ratio 1.5 for proportional adjustment
+            }
+
+            let newSize = currentSize + change;
+            
+            newSize = Math.max(minFontSize, Math.min(maxFontSize, newSize));
+
+            // Adjust line height proportionally
+            let lineHeightRatio = newLineHeight / currentSize; // Calculate current ratio
+            newLineHeight = newSize * lineHeightRatio; // Apply ratio to new font size
+
+            element.style.fontSize = `${newSize}px`;
+            element.style.lineHeight = `${newLineHeight}px`;
+        }
+
+        // Event listener for font size buttons
+        document.addEventListener('click', (e) => {
+            const button = e.target.closest('.font-size-button');
+            if (button) {
+                const targetId = button.dataset.target;
+                const action = button.dataset.action;
+                const targetElement = document.getElementById(targetId);
+                if (targetElement) {
+                    if (action === 'increase') {
+                        adjustFontSize(targetElement, fontSizeStep);
+                    } else if (action === 'decrease') {
+                        adjustFontSize(targetElement, -fontSizeStep);
+                    }
+                }
+            }
+        });
+
+        // Event listener for mouse scroll wheel + Ctrl key
+        document.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                const targetElements = [
+                    document.getElementById('largeMessageInputTextArea'),
+                    document.getElementById('memoDetailsContent'), // The div that holds content in details modal
+                    document.getElementById('editMemoContentInput') // The textarea in edit modal
+                ];
+
+                let target = null;
+                // Check if the event target or its parent is one of the desired text areas
+                for (const el of targetElements) {
+                    if (el && (el.contains(e.target) || el === e.target)) {
+                        target = el;
+                        break;
+                    }
+                }
+
+                if (target) {
+                    e.preventDefault(); // Prevent page zooming
+                    if (e.deltaY < 0) { // Scroll up (zoom in)
+                        adjustFontSize(target, fontSizeStep);
+                    } else { // Scroll down (zoom out)
+                        adjustFontSize(target, -fontSizeStep);
+                    }
+                }
+            }
+        }, { passive: false }); // Use passive: false to allow preventDefault
+
+
         // --- Utility Functions ---
 
         function getRandomMemoBgClass() { return memoBgColors[Math.floor(Math.random() * memoBgColors.length)]; }
@@ -1133,9 +1250,13 @@
                         <label for="editMemoNameInput" class="block text-sm font-medium text-gray-700 mb-1">Name:</label>
                         <input type="text" id="editMemoNameInput" class="input-field w-full p-3 rounded-xl focus:outline-none text-base" value="${memoData.name}" maxlength="50">
                     </div>
-                    <div class="mb-4">
+                    <div class="mb-4 relative">
                         <label for="editMemoContentInput" class="block text-sm font-medium text-gray-700 mb-1">Content:</label>
                         <textarea id="editMemoContentInput" class="input-field w-full p-3 rounded-xl focus:outline-none resize-y text-base" rows="8">${memoData.content}</textarea>
+                        <div class="font-size-controls">
+                            <button class="font-size-button" data-target="editMemoContentInput" data-action="decrease">-</button>
+                            <button class="font-size-button" data-target="editMemoContentInput" data-action="increase">+</button>
+                        </div>
                     </div>
                     <div class="mb-6">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Importance Level:</label>
@@ -1282,10 +1403,14 @@
                         </div>
                         <input type="text" id="detailsSearchInput" class="input-field flex-1 p-2 rounded-xl focus:outline-none text-sm" placeholder="Search within memo content...">
                     </div>
-                    <div class="mb-6">
+                    <div class="mb-6 relative">
                         <label for="memoDetailsContent" class="block text-sm font-medium text-gray-700 mb-1">Content:</label>
                         <div id="memoDetailsContent" class="memo-details-content-area text-base text-gray-700 p-3 rounded-xl bg-gray-50 border border-gray-200 ${getImportanceBorderClass(memoData.importance)}">
                             </div>
+                        <div class="font-size-controls">
+                            <button class="font-size-button" data-target="memoDetailsContent" data-action="decrease">-</button>
+                            <button class="font-size-button" data-target="memoDetailsContent" data-action="increase">+</button>
+                        </div>
                     </div>
                     <p class="text-xs text-gray-500 text-right">${displayTimestamp}</p>
                     <div class="flex flex-col sm:flex-row gap-3 mt-6">
@@ -1702,6 +1827,9 @@
                 contentArea.className = "flex-grow overflow-hidden mb-1 pointer-events-none"; 
                 const contentText = document.createElement('div'); 
                 contentText.className = 'memo-content-text text-sm text-gray-700 h-full'; 
+                // Removed explicit font-size and line-height settings to revert to text-sm
+                // contentText.style.fontSize = `${initialFontSize}px`; 
+                // contentText.style.lineHeight = `${initialFontSize * 1.5}px`; 
                 const lines = memoObj.content.split('\n');
                 if (lines.length > MAX_MEMO_LINES) { 
                     const lastVisibleLine = lines[MAX_MEMO_LINES -1]; 
