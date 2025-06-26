@@ -1,5 +1,3 @@
-// This script should be loaded after the Firebase and Flatpickr libraries have been loaded.
-
 // Firebase Imports - Use the latest modular syntax
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { 
