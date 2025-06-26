@@ -1,5 +1,21 @@
 // This script should be loaded after the Firebase and Flatpickr libraries have been loaded.
 
+// Firebase Imports - Use the latest modular syntax
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { 
+    getAuth, 
+    onAuthStateChanged, 
+    signInWithEmailAndPassword, 
+    createUserWithEmailAndPassword, 
+    signOut 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { 
+    getDatabase, 
+    ref, 
+    onValue, 
+    set 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
 // Your web app's Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyBOfrCOivIkOA0BzMQ8teMhMtglhhsj6aI",
@@ -11,11 +27,13 @@ const firebaseConfig = {
     appId: "1:169391391927:web:f045f75d77afcaa959b932"
 };
 
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.database();
+// Initialize Firebase App
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app); // Get Auth service instance
+const db = getDatabase(app); // Get Realtime Database service instance
+
 let dbRef = null; // Will hold reference to user's data in DB
+let dataUnsubscribe = null; // To store the unsubscribe function for onValue
 
 // --- AUTHENTICATION ---
 
@@ -60,7 +78,8 @@ registerForm.addEventListener('submit', (e) => {
         return;
     }
 
-    auth.createUserWithEmailAndPassword(email, password)
+    // createUserWithEmailAndPassword now takes the auth instance as its first argument
+    createUserWithEmailAndPassword(auth, email, password)
         .catch(error => {
             registerError.textContent = error.message;
         });
@@ -73,7 +92,8 @@ loginForm.addEventListener('submit', (e) => {
     const password = document.getElementById('loginPassword').value;
     loginError.textContent = '';
 
-    auth.signInWithEmailAndPassword(email, password)
+    // signInWithEmailAndPassword now takes the auth instance as its first argument
+    signInWithEmailAndPassword(auth, email, password)
         .catch(error => {
             loginError.textContent = error.message;
         });
@@ -81,12 +101,14 @@ loginForm.addEventListener('submit', (e) => {
 
 // Handle Logout
 logoutButton.addEventListener('click', () => {
-    auth.signOut();
+    // signOut now takes the auth instance as its first argument
+    signOut(auth);
 });
 
 
 // Auth State Observer
-auth.onAuthStateChanged(user => {
+// onAuthStateChanged now takes the auth instance as its first argument
+onAuthStateChanged(auth, user => {
     if (user) {
         // User is signed in.
         authContainer.classList.add('hidden');
@@ -95,18 +117,23 @@ auth.onAuthStateChanged(user => {
         userEmailDisplay.textContent = user.email;
 
         // Set up database reference for the logged-in user
-        dbRef = db.ref(`users/${user.uid}/appData`);
+        // ref now takes the database instance as its first argument
+        dbRef = ref(db, `users/${user.uid}/appData`);
 
         // Listen for data changes
-        dbRef.on('value', (snapshot) => {
+        // onValue returns the unsubscribe function
+        dataUnsubscribe = onValue(dbRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 loadDataFromFirebase(data);
             } else {
-                // New user, set up default data
+                // New user or no data, set up default data
                 initializeDefaultData();
             }
             updateUI();
+        }, (error) => {
+            console.error("Firebase Realtime Database error:", error);
+            showNotification(`Data loading error: ${error.message}`, 'error');
         });
         
         // Initialize the app state after login
@@ -118,10 +145,13 @@ auth.onAuthStateChanged(user => {
         appContainer.classList.add('hidden');
         userInfoContainer.classList.add('hidden');
 
-        // Detach the database listener
-        if (dbRef) {
-            dbRef.off();
+        // Detach the database listener using the stored unsubscribe function
+        if (dataUnsubscribe) {
+            dataUnsubscribe();
+            dataUnsubscribe = null; // Clear the reference
         }
+        dbRef = null; // Clear the dbRef reference
+
         // Clear local state
         resetLocalState();
         updateUI();
@@ -155,8 +185,10 @@ const openLargeMessageInputModalButton = document.getElementById('openLargeMessa
 const largeMessageInputModal = document.getElementById('largeMessageInputModal');
 const largeMessageInputTextArea = document.getElementById('largeMessageInputTextArea');
 const closeLargeMessageInputModalButton = document.getElementById('closeLargeMessageInputModalButton');
-const saveLargeMessageButton = document.getElementById('saveLargeMessageButton'); // Still needed for internal logic
-const cancelLargeMessageButton = document.getElementById('cancelLargeMessageButton'); // Still needed for internal logic
+// saveLargeMessageButton and cancelLargeMessageButton seem to be remnants from a previous modal implementation
+// and are not present in the HTML. They are commented out as they are not needed.
+// const saveLargeMessageButton = document.getElementById('saveLargeMessageButton'); 
+// const cancelLargeMessageButton = document.getElementById('cancelLargeMessageButton'); 
 
 
 // Global State Variables
@@ -445,20 +477,16 @@ async function copyToClipboard(text, sourceElement) {
     }
 
     try {
-        if (navigator.clipboard && window.isSecureContext) { 
-            await navigator.clipboard.writeText(text);
+        // Use document.execCommand('copy') for broader compatibility in iframes
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
             showNotification('Memo content copied! 📋');
-        } else { 
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
-            try {
-                document.execCommand('copy');
-                showNotification('Memo content copied! 📋');
-            } finally {
-                document.body.removeChild(textarea);
-            }
+        } finally {
+            document.body.removeChild(textarea);
         }
     } catch (err) {
         console.error('Failed to copy:', err);
@@ -617,10 +645,14 @@ function initializeDefaultData() {
 
 function saveAllData() { 
     if (dbRef) {
-        dbRef.set({
+        // set now takes the ref instance as its first argument
+        set(dbRef, {
             pages: pages,
             pageOrder: pageOrder,
             currentPage: currentPage
+        }).catch(error => {
+            console.error("Firebase save error:", error);
+            showNotification(`Failed to save data: ${error.message}`, 'error');
         });
     }
 }
@@ -828,6 +860,8 @@ function handleDrop(event) {
             newIndex = targetDatasetIndex + 1;
         }
         
+        // This adjustment is crucial if the dragged item is removed before the new position is determined
+        // and the new position is after the original position of the dragged item.
         if (draggedMemoIndex < newIndex) {
             newIndex--; 
         }
@@ -1051,6 +1085,7 @@ function parseDateString(dateString) {
         const year = parseInt(parts[2], 10);
         if (year > 0 && month >= 0 && month < 12 && day > 0 && day <= 31) {
             const date = new Date(year, month, day);
+            // Validate the date to ensure it's not a "spillover" date (e.g., Feb 30)
             if (date.getFullYear() === year && date.getMonth() === month && date.getDate() === day) {
                 return date;
             }
@@ -1060,11 +1095,11 @@ function parseDateString(dateString) {
 }
 
 function getFinancialYearStartDate(year) {
-    let may1 = new Date(year, 4, 1); 
-    let dayOfWeek = may1.getDay(); 
-    let daysToAdd = (7 - dayOfWeek) % 7; 
+    let may1 = new Date(year, 4, 1); // May is month 4 (0-indexed)
+    let dayOfWeek = may1.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    let daysToAdd = (7 - dayOfWeek) % 7; // Days to add to reach the next Sunday
     may1.setDate(may1.getDate() + daysToAdd);
-    may1.setHours(0, 0, 0, 0); 
+    may1.setHours(0, 0, 0, 0); // Set to start of the day
     return may1;
 }
 
@@ -1076,6 +1111,8 @@ function calculateFinancialWeek(date) {
     let actualFYStart; 
     let actualFYLabel; 
     let nextFYStartForActualFY; 
+    
+    // Determine which financial year the given date falls into
     if (date < fyStartCurrentCalYear) { 
         actualFYStart = fyStartPrevCalYear;
         actualFYLabel = currentCalYear - 1;
@@ -1087,17 +1124,18 @@ function calculateFinancialWeek(date) {
     }
 
     const daysInActualFY = Math.floor((nextFYStartForActualFY - actualFYStart) / (1000 * 60 * 60 * 24));
-    const is53WeekYear = (daysInActualFY === 371); 
+    const is53WeekYear = (daysInActualFY === 371); // A 53-week financial year has 371 days (53 * 7)
 
     const diffDaysFromActualFYStart = Math.floor((date - actualFYStart) / (1000 * 60 * 60 * 24));
     let weekNumber = Math.floor(diffDaysFromActualFYStart / 7) + 1;
 
+    // Handle edge cases for week numbers, ensuring it's within bounds
     if (is53WeekYear && weekNumber > 53) {
-        weekNumber = 53; 
+        weekNumber = 53; // Cap at 53 for 53-week years
     } else if (!is53WeekYear && weekNumber > 52) {
-        weekNumber = 52; 
+        weekNumber = 52; // Cap at 52 for 52-week years
     }
-    if (weekNumber <=0) weekNumber = 1; 
+    if (weekNumber <=0) weekNumber = 1; // Ensure week number is at least 1
 
     const startYearShort = String(actualFYLabel).slice(-2);
     const endYearShort = String(actualFYLabel + 1).slice(-2);
@@ -1107,7 +1145,7 @@ function calculateFinancialWeek(date) {
 function updateDateAndWeekInputs() {
     const today = new Date();
     if (flatpickrInstance) {
-        flatpickrInstance.setDate(today, true); 
+        flatpickrInstance.setDate(today, true); // Set date and trigger change event
     } else {
         memoDateInput.value = formatDate(today);
         updateMemoWeekBasedOnDateInput();
@@ -1120,7 +1158,7 @@ function updateMemoWeekBasedOnDateInput() {
     if (parsedDate) {
         memoWeekInput.value = calculateFinancialWeek(parsedDate);
     } else {
-        memoWeekInput.value = ''; 
+        memoWeekInput.value = ''; // Clear week if date is invalid
     }
 }
 
@@ -1287,6 +1325,8 @@ function handlePageDrop(event) {
         if (isAfter) {
             newIndex = targetIndex + 1;
         }
+        // If the dragged item was originally before the target index, and it's being
+        // inserted after the target, the effective index in the array shifts.
         if (oldIndex < newIndex) {
             newIndex--; 
         }
@@ -1579,11 +1619,15 @@ if(!flatpickrInstance) {
         clickOpens: false,       
         defaultDate: "today",
         onChange: function(selectedDates, dateStr, instance) {
+            // Manually trigger the 'input' event on the original input field
+            // so our memoWeekInput listener can react.
             const event = new Event('input', { bubbles: true });
             instance.input.dispatchEvent(event);
         }
     });
 
+    // Add a change listener to the Flatpickr's alternative input field (if altInput is true)
+    // This handles cases where the user directly types into the alt input.
     if (flatpickrInstance && flatpickrInstance.altInput) {
         flatpickrInstance.altInput.addEventListener('change', () => {
             const event = new Event('input', { bubbles: true });
@@ -1591,6 +1635,7 @@ if(!flatpickrInstance) {
         });
     }
 
+    // Click listener for the calendar icon to open Flatpickr
     memoDateIcon.addEventListener('click', () => {
         if (flatpickrInstance) {
             flatpickrInstance.open();
