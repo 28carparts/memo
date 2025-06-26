@@ -6,7 +6,7 @@ const firebaseConfig = {
     authDomain: "perrymemonotes.firebaseapp.com",
     databaseURL: "https://perrymemonotes-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "perrymemonotes",
-    storageBucket: "perrymemonotes.appspot.com",
+    storageBucket: "perrymemonotes.firebasestorage.app",
     messagingSenderId: "169391391927",
     appId: "1:169391391927:web:f045f75d77afcaa959b932"
 };
